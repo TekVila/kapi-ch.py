@@ -1,21 +1,38 @@
 #!/usr/bin/python
+
+"""
+kapi-ch.py : A simple terminal client for public Chatango(e)s
+  Extends ch.py's RoomManager https://github.com/Nullspeaker/ch.py
+
+bidouilled by TekVila
+"""
 import ch
 import random
 from threading import Thread
 import urllib.request
 import subprocess
-from subprocess import check_output
 import re
 import os
 import getpass
 import datetime
+import sys
 
 def unspace_sup(msg):
   msg = msg.replace("&#39;","'")
   return msg
 
-def termform_message(time, name, mess):
-  txt = "[" + time.strftime("%H:%M") + "] " + "\x1b[1;31m<" + name + ">\x1b[0m " + unspace_sup(mess) 
+def termform_message(time, name, mess, level = 0):
+  end = "\x1b[0m"
+  if level == 0:
+    dec = ""
+    nameCol = "\x1b[1;31m"
+  elif level == 1:
+    dec = "@"
+    nameCol = "\x1b[2;31m"
+  else:
+    dec = "~"
+    nameCol = "\x1b[3;31m"
+  txt = "\x1b[3;36m[" + time.strftime("%H:%M") + "] " + end + nameCol  + "<" + dec + name + "> " + end  + unspace_sup(mess)
   return txt
 
 class Kapich(ch.RoomManager):
@@ -34,27 +51,35 @@ class Kapich(ch.RoomManager):
   
   def inputer(self, room):
     while True:
-      msgU = input("> ")
-      if msgU.lower().startswith("!who"):
-        for u in self.getRoom(room)._userlist:
-          print(u)
-      elif msgU.lower().startswith("!lastpic"):
-        if picURL != "":
-          urllib.request.urlretrieve(picURL, "tmppic")
-          subprocess.Popen(["cacaview", "tmppic"])
-      elif msgU.lower().startswith("!last"):
-        lsm = msgU.split(" ");
-        if len(lsm) > 1:
-          print(" ** " + lsm[1] + " : " + unspace_sup(self.getRoom(room).getLastMessage(self.getRoom(room).findUser(lsm[1])).body))
-      elif msgU.lower().startswith("!clean"):
-        #recap history
-        subprocess.call(["killall", "cacaview"])
-        subprocess.call(["clear"])
-        for ms in self.getRoom(room)._history:
-          print(termform_message(datetime.datetime.utcfromtimestamp(ms.time), ms.user.name,  ms.body))
-      else:
-        self.getRoom(room).message("" + msgU)  
-  
+      try:
+        msgU = input("> ").lower()
+        if msgU.lower().startswith("!who"):
+          for u in self.getRoom(room)._userlist:
+            print(u)
+        elif msgU.lower().startswith("!lastpic"):
+          if picURL != "":
+            urllib.request.urlretrieve(picURL, "tmppic")
+            subprocess.Popen(["cacaview", "tmppic"])
+            #print("\033[?1049h\033[H")
+            #subprocess.call(["cacaview", "tmppic"])
+            #print("\033[?1049l")
+        elif msgU.lower().startswith("!last"):
+          lsm = msgU.split(" ");
+          if len(lsm) > 1:
+            usL = self.getRoom(room).findUser(lsm[1])
+            msL = self.getRoom(room).getLastMessage(usL)
+            print("** " + termform_message(datetime.datetime.utcfromtimestamp(msL.time) ,lsm[1], msL.body, self.getRoom(room).getLevel(usL)))
+        elif msgU.lower().startswith("!clean"):
+          #recap history
+          subprocess.call(["killall", "cacaview"])
+          subprocess.call(["clear"])
+          for ms in self.getRoom(room)._history:
+            print(termform_message(datetime.datetime.utcfromtimestamp(ms.time), ms.user.name,  ms.body, self.getRoom(room).getLevel(ms.user)))
+        else:
+          self.getRoom(room).message("" + msgU)  
+      except KeyboardInterrupt:
+        break;
+        
   @classmethod
   def the_start(cl, rooms = None, name = None, password = None, pm = True):
     """
@@ -78,10 +103,8 @@ class Kapich(ch.RoomManager):
       self.joinRoom(room)
     print(rooms[0])
     roomC = rooms[0]
-    #thread = Thread(target = TestBot.inputer, args = (self.getRoom(room),) )
     thread = Thread(target = self.main, args = ())
     thread.start()
-    #self.main()
     self.inputer(roomC)
   
   def onConnect(self, room):
@@ -95,15 +118,16 @@ class Kapich(ch.RoomManager):
     print("Disconnected from "+room.name)
 
   def onMessage(self, room, user, message):
-    # Use with PsyfrBot framework? :3
-    print(termform_message(datetime.datetime.utcfromtimestamp(message.time), user.name, message.body))
+    #print("\033[?1049l")
+    print(termform_message(datetime.datetime.utcfromtimestamp(message.time), user.name, message.body, room.getLevel(user)))
 
-    if message.body.lower().startswith("!+-"):
+    lowmess = message.body.lower()
+    if lowmess.startswith("!+-"):
       room.message("Bot : On joue entre 0 et 5000")
       global valML
       valML = random.randint(0, 5000)
       print(valML)
-    elif message.body.lower().startswith("!val"):
+    elif lowmess.startswith("!val"):
       mparts = message.body.split(" ")
       if len(mparts) > 1:
         valtest = int(mparts[1])
@@ -115,9 +139,9 @@ class Kapich(ch.RoomManager):
           room.message("Bot : C'est moins !")
       else:
         room.message("Bot : Fail "+ user.name  + " !!!")
-    elif ".jpg" in message.body.lower() or ".png" in message.body.lower():
+    elif ".jpg" in lowmess or ".png" in lowmess:
       global picURL
-      urls = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', message.body.lower())
+      urls = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', lowmess)
       if len(urls) > 0:
         for url in urls:
           if ".jpg" in url or ".png" in url:
@@ -134,20 +158,20 @@ class Kapich(ch.RoomManager):
     pm.message(user, body) # echo
 
   def onJoin(self, room, user, puid):
-    print( datetime.datetime.now().strftime("%H:%M:%S")  + " ** " + user.name + " est là !");
+    print(termform_message(datetime.datetime.now(), user.name, "\x1b[3;32m is here !\x1b[0m", room.getLevel(user)))
 
   def onLeave(self, room, user, puid):
-    print( datetime.datetime.now().strftime("%H:%M:%S")  + " ** " + user.name + " est gone !");
+    print(termform_message(datetime.datetime.now(), user.name, "\x1b[3;31m is gone !\x1b[0m", room.getLevel(user)))
 
   def onHistoryMessage(self, room, user, message):
-    print(termform_message(datetime.datetime.utcfromtimestamp(message.time),user.name, message.body))
-    #print( "** " + datetime.datetime.utcfromtimestamp(message.time).strftime("%H:%M:%S")  + " ** " + user.name + " : " + unspace_sup(message.body)) 
+    print(termform_message(datetime.datetime.utcfromtimestamp(message.time),user.name, message.body, room.getLevel(user)))
     
     
 
 if __name__ == "__main__":
-  pppid = os.popen("ps -p %d -oppid=" % os.getppid()).read().strip()
   global lterm
-  lterm = os.popen("ps -p %s -o comm=" % pppid).read().strip()
+  lterm = os.environ["TERM"]
   print(lterm)
   Kapich.the_start()
+  print("")
+  os._exit(1)
