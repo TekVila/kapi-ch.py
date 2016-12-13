@@ -1,13 +1,20 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 """
 kapi-ch.py : A simple terminal client for public Chatango(e)s
   Extends ch.py's RoomManager https://github.com/Nullspeaker/ch.py
 
+  #Needed
+    ch.py (obviously)
+    python 3.x
+
+  #Recommended
+    libcaca
+    beep
+
 bidouilled by TekVila
 """
 import ch
-import random
 from threading import Thread
 import urllib.request
 import subprocess
@@ -15,7 +22,7 @@ import re
 import os
 import getpass
 import datetime
-import sys
+
 
 def unspace_sup(msg):
   msg = msg.replace("&#39;","'")
@@ -52,33 +59,36 @@ class Kapich(ch.RoomManager):
   def inputer(self, room):
     while True:
       try:
-        msgU = input("> ").lower()
-        if msgU.lower().startswith("!who"):
+        msg = input("> ")
+        msgU = msg.lower()
+        if msgU.startswith("!who"):
           for u in self.getRoom(room)._userlist:
             print(u)
-        elif msgU.lower().startswith("!lastpic"):
+        elif msgU.startswith("!lastpic"):
           if picURL != "":
             urllib.request.urlretrieve(picURL, "tmppic")
             subprocess.Popen(["cacaview", "tmppic"])
             #print("\033[?1049h\033[H")
             #subprocess.call(["cacaview", "tmppic"])
             #print("\033[?1049l")
-        elif msgU.lower().startswith("!last"):
+        elif msgU.startswith("!last"):
           lsm = msgU.split(" ");
           if len(lsm) > 1:
             usL = self.getRoom(room).findUser(lsm[1])
             msL = self.getRoom(room).getLastMessage(usL)
             print("** " + termform_message(datetime.datetime.utcfromtimestamp(msL.time) ,lsm[1], msL.body, self.getRoom(room).getLevel(usL)))
-        elif msgU.lower().startswith("!clean"):
+        elif msgU.startswith("!clean"):
           #recap history
           subprocess.call(["killall", "cacaview"])
           subprocess.call(["clear"])
           for ms in self.getRoom(room)._history:
             print(termform_message(datetime.datetime.utcfromtimestamp(ms.time), ms.user.name,  ms.body, self.getRoom(room).getLevel(ms.user)))
+        elif msgU.startswith("!quit") | msgU.startswith("!exit"):
+          break
         else:
-          self.getRoom(room).message("" + msgU)  
+          self.getRoom(room).message("" + msg)  
       except KeyboardInterrupt:
-        break;
+        break
         
   @classmethod
   def the_start(cl, rooms = None, name = None, password = None, pm = True):
@@ -94,18 +104,21 @@ class Kapich(ch.RoomManager):
     """
     if not rooms: rooms = str(input("Room name : ")).split(";")
     if len(rooms) == 1 and rooms[0] == "": rooms = []
-    if not name: name = str(input("User name: "))
-    if name == "": name = None
-    if not password: password = str(getpass.getpass("User password: "))
-    if password == "": password = None
-    self = cl(name, password, pm = pm)
-    for room in rooms:
-      self.joinRoom(room)
-    print(rooms[0])
-    roomC = rooms[0]
-    thread = Thread(target = self.main, args = ())
-    thread.start()
-    self.inputer(roomC)
+    if len(rooms) == 1:
+      title = str(urllib.request.urlopen("http://" + rooms[0] + ".chatango.com").read()).split("<title>")[1].split("</title>")[0]
+      print(">> \x1b[3;36m" + title[:-4] + "\x1b[0m <<")
+      if not name: name = str(input("User name: "))
+      if name == "": name = None
+      if not password: password = str(getpass.getpass("User password: "))
+      if password == "": password = None
+      self = cl(name, password, pm = pm)
+      for room in rooms:
+        self.joinRoom(room)
+      #print(rooms[0])
+      roomC = rooms[0]
+      thread = Thread(target = self.main, args = ())
+      thread.start()
+      self.inputer(roomC)
   
   def onConnect(self, room):
     curRoom = room
@@ -119,27 +132,10 @@ class Kapich(ch.RoomManager):
 
   def onMessage(self, room, user, message):
     #print("\033[?1049l")
-    print(termform_message(datetime.datetime.utcfromtimestamp(message.time), user.name, message.body, room.getLevel(user)))
+    print("\a" + termform_message(datetime.datetime.utcfromtimestamp(message.time), user.name, message.body, room.getLevel(user)))
 
     lowmess = message.body.lower()
-    if lowmess.startswith("!+-"):
-      room.message("Bot : On joue entre 0 et 5000")
-      global valML
-      valML = random.randint(0, 5000)
-      print(valML)
-    elif lowmess.startswith("!val"):
-      mparts = message.body.split(" ")
-      if len(mparts) > 1:
-        valtest = int(mparts[1])
-        if valtest == valML:
-          room.message("Bot : Bingo " + user.name + " !!!")
-        elif valtest < valML:
-          room.message("Bot : C'est plus !")
-        else:
-          room.message("Bot : C'est moins !")
-      else:
-        room.message("Bot : Fail "+ user.name  + " !!!")
-    elif ".jpg" in lowmess or ".png" in lowmess:
+    if ".jpg" in lowmess or ".png" in lowmess:
       global picURL
       urls = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', lowmess)
       if len(urls) > 0:
@@ -148,7 +144,7 @@ class Kapich(ch.RoomManager):
             picURL = url           
             #break
       else:
-        picURL = ""        
+        picURL = ""       
 
   def onFloodBan(self, room):
     print("You are flood banned in "+room.name)
@@ -165,13 +161,11 @@ class Kapich(ch.RoomManager):
 
   def onHistoryMessage(self, room, user, message):
     print(termform_message(datetime.datetime.utcfromtimestamp(message.time),user.name, message.body, room.getLevel(user)))
-    
-    
 
 if __name__ == "__main__":
   global lterm
   lterm = os.environ["TERM"]
-  print(lterm)
+  #print(lterm)
   Kapich.the_start()
   print("")
   os._exit(1)
